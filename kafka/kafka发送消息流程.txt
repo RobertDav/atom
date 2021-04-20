@@ -1,0 +1,29 @@
+1.创建producerRecord 对象 此对象中包含 topic，以及发送的内容，还可以指定键或者分区
+2.生产者对producerRecord 对象进行序列化
+3.分区器接收到消息后 先来选择一个分区
+4.这条记录被添加到recordAccumulator 这个批次会被发送到相同的主题和分区上
+5.sender线程负责将这些记录批次 发送到相对应的broker上
+6.broker 在接受到消息时 会返回一个响应，如果成功返回一个recordMeraData 包含主题和 分区西悉尼，以及记录在分区的偏移量
+7.生产者如果接收到错误会尝试发送
+https://img-blog.csdnimg.cn/20200504085326693.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L2ExMjQwNDY2MTk2,size_16,color_FFFFFF,t_70
+消息发送分为 3个模块
+  1.主线程负责 生产消息 并序列化，选择分区，然后将消息存放到recordAccumulator中，相当于缓冲区，
+    producerInterceptor 在消息被序列化之前对消息内送进行修改onSend()，也可以在消息应答或者消息发送失败时做处理onAcknowledgement()会先于用户自定义的回调方法 这个是运行在I/O线程中 不要搞太多逻辑
+    Serializer 对消息的key和value 进行序列化
+    partitioner 为消息选择合适的partition
+    recordAccumulator 收集消息 实现批量发送
+  2.当缓冲区满了之后 sender线程会从缓冲区中读取数据
+    sender线程从recordAccumulator中收集消息 实现批量发送
+    构造 clientRequest
+    将clientRequest交给netWorkClient准备发送
+    networkClient 将请求放入kafkaChannel
+  3.发送到相对应的broker上
+    执行网络IO 发送请求
+    收到响应调用clientRequest的回调函数
+    调用recordBatch的回调函数，最终调用每个消息上注册的回调函数
+集群元数据
+  在KafkaProducer 中 使用Node,TopicPartition,PartitionInfo封装了Kafka集群相关的元数据
+  Node:表示集群中的一个节点，Node记录了这个节点的host，IP，port等信息
+  TopicPatition：表示某Topic的一个分区，其中topic字段是Topic的名称，partitioner字段则是此分区在Topic中的分区编号（ID）
+  partitionInfo:分区的详细信息，leader 字段记录了Leader 副本所在节点的id，replica字段记录了全部副本所在的节点信息，inSyncReplicas 字段记录了ISR
+  集合中所有副本所在的信息
