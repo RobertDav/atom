@@ -1,0 +1,54 @@
+1.生产端的sender线程的网络通信 kafka 如何通过网络通信将一批消息发送到broker上
+  1.1kafkaProducer 包含了线程资源以及网络资源，主要是通过一些线程实现了小的异步发送
+  批处理机制 维护了跟各个broker的网络链接，然后可以通过网络链接发送i西澳西到broker去
+  1.2 核心组件
+    1.2.1 partition 后面用来决定 发送的每一条消息是路由到topic的那个分区
+    1.2.2 retry.backoff.ms 每次重试间隔时间
+    1.2.3 interceptor 用户在消息发送之前以及producer 回调逻辑前 有机会对消息做一些修改，也可以使用拦截链（interceptor chain）
+          ProducerInterceptor
+            onSend() 在消息被序列化以及计算分区前调用，可以修改消息的任何数据（运行在用户主线程）
+            onAcknowledgement() 该方法会在消息被应答或者消息发送失败时调用 并且通常在 producer 回调逻辑触发前
+            （运行在producer的IO线程中 不要写太多的逻辑 不然会影响消息发送的效率）
+    1.2.4 maxRequestSize /totalMemorySize 用来一起校验消息是否过长
+          byte[] value = valueSerializer.serialize(record.topic,record.headers(),record.values());
+          value.size < maxRequestSize && value.size < totalMemorySize
+    1.2.5 compression.type
+    1.2.6 max.block.ms  控制kafkaProducer.send() 和 kafkaProducer.partitionsFor()的阻塞时间，
+          这些方法可以由于缓冲区已满或元数据不可用而被阻塞，用户提供的序列化器或分区器中的阻塞将不计入此超时时间
+    1.2.7 request.timeout.ms 客户端等待请求响应的最长时间，超时即再次发送 如果超过重试次数则 请求失败
+          这个值需要大于 replica.lag.time.max.ms (broker 配置) 以减少由于不必要的生产者重试而导致消息重复的可能
+    todo: producer 采用的异步发送机制 send() 方法仅仅是把这条消息放入缓存中（recordAccumulator,本质上使用了队列来缓存记录）
+          RecordAccumulator中存储量达到一个条件后，便会唤醒Sender线程发送RecordAccumulator中的消息，recordAccumulator 中使用
+          一个currentHashMap来缓存我们的数据，其中key保存的分区的信息，value 保存的是具体的消息记录 value 用arrayQueue 来保存
+          recordBacth 又使用memoryRecords 来保存
+          这个过程可能会造成消息丢失
+          （IO线程发送之前client 端挂掉，累积在accumulator中的数据可能丢失）
+          可能发生消息乱序的问题
+            （record1 与 record2 record1 发送时发生网络抖动 继而重试 若 max.in.flight.requests.per.connection >1
+              默认为5 那么重试record1成功后 即会发生乱序
+            ）
+    1.2.8 max.in.flight.requests.per.connection =1 限制客户端在单个连接上能够发送的未响应请求的个数。设置此值为1 表示
+          kafka broker在响应请求之前client 不能再向同一个broker 发送请求 （设置此参数避免消息乱序）
+    1.2.9 acks acks 参数设置为0 只要消息发送出去 不管消息有没有落盘 都认为成功
+               acks 参数设置为1 只要partition leader 接受到消息 而且写入本地磁盘即认为成功 不管其他follower
+               acks 参数设置为all partition leader 在接收到消息之后
+               还必须将ISR 列表里跟leader保持同步的那些 follower 都要同步成功
+          kafkaProducer.send(record,callback) 再callback逻辑中显式关闭producer：close(0) 设置此参数为了避免消息乱序
+          unclean.leader.eletion.enable = false 关闭unclean leader 选举 即不允许非ISR中的副本被选举为leader，以避免丢数据
+          replication.factor >=3
+          min.insync.replicas > 1 消息至少要被写入到这么多个副本才算成功，也是提升数据支持性的一个参数，与acks配合使用
+          保证 replication.facotr > min.insync.replicas 如果两者相等 当一个副本挂了 分区也就没办法正常工作了 。通常
+          replication.factor = min.insync.replica+1
+2.网络通信的参数 如何应对网络故障
+3.server端的架构是如何设计的，server端的网络通信细节，底层网络通信对应的参数
+4.磁盘读写，磁盘的存储结构 怎么使用os pagecache 怎么实现磁盘文件的顺序读写
+5。多符文冗余以及高可用设计，leader 与follower 如何同步 副本是如何传输的，offset是如何变更的
+如果leader 所在的broker故障了 如何进行leader 和follower的切换
+
+6.kafka broker 的集群架构设计与实现， 各个broker 如何组成一个集群 集群的主控节点是如何 选举出来的，后续如何
+监控集群里的每一个broker 是否正常运行或者宕机，如何对故障的broker进行备用替代，集群 的元数据
+（topic partition leader/follower isr）
+7.负载均衡 如何保证数据均匀的分布在集群的哥哥broker机器，如何进行topic的partition的扩容 ，
+如何通过加更多的broker来进行集群的扩容
+8.消费端的原理 每个消费组的主控节点如何选择的，group coordinator 如何选择 consumer group leader 如何选择
+分区分配的方法，分布式消费的 实现机制 拉取消息的原理 offset 提交的原理
