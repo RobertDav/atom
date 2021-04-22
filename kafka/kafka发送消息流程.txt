@@ -1,3 +1,36 @@
+1.kafkaProducer 相当于收件员
+  首先对消息进行加工 如序列化 选择分区
+  (1)拦截器处理(对快递进行发送前的预处理)
+  (2)判断producer是否可用 依据是负责IO的线程是否工作(车队是否罢工)
+  (3)判断metadata是否可用。meta相当于调度员的指挥图，存储了kafka集群的各种信息 包括topic 分区等信息(类似与快递站的网点信息)
+  (4)对key value 进行序列化 (对快递进行包装)
+  (5)获取要发往的分区编号(快递目的地部分地址)
+  (6)计算序列化后的大小(快件称重)
+2.RecordAccumulator相当于分拣员，负责将消息按照分区分类 放入到相对应的ProducerBatch
+  ProducerBatch 每个ProducerBatch是一个信箱 而同一个partition的信箱码放在一起 在程序中表现 Deque<ProducerBatch>
+  当batch满是触发sender线程 sender线程首先把batch从原列表中取出来按照发往broker进行分组然后封装到ClientRequest中
+  (7)通过RecordAccumulator 把消息加入到batch中(分拣员进行分拣)
+    同时又一个业务主线程 与 sender线程操作recordAccumulator 所以recordAccumulator 是线程安全的
+    RecordAccumulator实现了接受消息，ConcurrentMap<TopicPartition, Deque<ProducerBatch>> 然后以主题分区为单元，把消息以producerBatch为单位累计缓存，多个producerBatch保存在Deque队列中
+    当Deque中最新的batch已不能容纳消息时，就会创建新的Batch来继续缓存并将其加入到Deque中
+    消息真实存放在dataOutPutStream ProducerBatch内部又一个memoryRecordBuilder对象 ProducerBatch->memoryRecordBuilder->dataOutPutStream
+    RecordAccumulator 消息累积器的顶层逻辑，维护存放消息的容器
+    ProducerBatch 封装memoryRecordBuilder 并且有很多控制用的信息以及统计信息
+    MemberRecordBuilder 消息真正累积存放的地方
+    总结
+    7.1 recordAccumulator 使用producerBatch来缓存消息 每个topicPartition都拥有一个Deque<ProducerBatch> ConcurrentMap<TopicPartition, Deque<ProducerBatch>>
+    7.2 当producerBatch 队列的队尾不能容纳新的消息时对其进行封箱 同时新建ProducerBatch放到队尾来接受新的消息
+    7.3 ProducerBatch 对消息的追加操作都是通过MemoryRecordBuilder进行的 消息最终被追加到MemoryRecordBuilder 中的dataOutPutStream appendStream 中
+3.Sender 相当于运输车 负责将消息真正发送出去 通过NIO实现网络传输
+  clientRequest 可以理解成运输车的货箱 在运输之前 我们会把发往同一个服务器的消息存入到clientRequest ，那么只需要
+  发送一此clientRequest 就可以把不同主题不同分区，但发往同一服务器的消息一次性发过去
+  (8)如果batch满了 或者创建了新batch来容纳消息，则唤醒sender线程执行发送(已经有封箱的货物 可以发货了)
+
+
+
+
+
+
 1.创建producerRecord 对象 此对象中包含 topic，以及发送的内容，还可以指定键或者分区
 2.生产者对producerRecord 对象进行序列化
 3.分区器接收到消息后 先来选择一个分区
