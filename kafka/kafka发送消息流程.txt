@@ -25,7 +25,7 @@
   clientRequest 可以理解成运输车的货箱 在运输之前 我们会把发往同一个服务器的消息存入到clientRequest ，那么只需要
   发送一此clientRequest 就可以把不同主题不同分区，但发往同一服务器的消息一次性发过去
   (8)如果batch满了 或者创建了新batch来容纳消息，则唤醒sender线程执行发送(已经有封箱的货物 可以发货了)
-
+    Sender把producerBatch按照要发往broker node进行分类 发往同一个Node的producerBatch会被打包在一起，（这样会只触发一次IO）
 
 
 
