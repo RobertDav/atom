@@ -1,4 +1,4 @@
-startUp()
+socketServer.startUp()
     1.根据配置参数创建 connectionQuotas (用来限制ip的最大连接数)
     2.创建 acceptors 和processors
       //param1: 在server.properties 中 表示 接受请求 发送response 的线程数，listeners的ip数量
