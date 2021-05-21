@@ -1,0 +1,5 @@
+1.分布式事务 AtomikosConnectionFactoryBean
+2.kafka https://apppukyptrl1086.pc.xiaoe-tech.com/detail/p_60687291e4b09134c98517fe/6?fromH5=true
+        https://blog.csdn.net/liyiming2017/article/details/89099467
+        https://www.cnblogs.com/Harley-Quinn/p/11573706.html
+3.arthas
