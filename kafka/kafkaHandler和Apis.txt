@@ -1,0 +1,5 @@
+客户端的读写都是processor 将请求通过requestChannle 发送给KafkaRequestHandler ，同时也会接受kafkaApis 通过requestChanel回复的响应
+请求: processor.processCompletedReceives
+        requestChannel.sendRequest(request)
+          requestQueue.put(request) 即将request请求存放进一个队列(ArrayBlockingQueue)中
+在kafkaRequestHandler.run() 方法中 调用出队方法  requestChannel.receiveRequest(300) => requestQueue.poll(timeout, TimeUnit.MILLISECONDS)
