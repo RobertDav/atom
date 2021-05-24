@@ -3,3 +3,31 @@
         requestChannel.sendRequest(request)
           requestQueue.put(request) 即将request请求存放进一个队列(ArrayBlockingQueue)中
 在kafkaRequestHandler.run() 方法中 调用出队方法  requestChannel.receiveRequest(300) => requestQueue.poll(timeout, TimeUnit.MILLISECONDS)
+//用一个池子来管理kafkaRequestHandler
+//第一个参数 brokerId,第二个参数 requestChannel 对象 第三个参数 kafkaApi 对象 第四个参数是kafkaServer的构造参数 为SystemTime 对象 第五个参数 是线程数num.io.threads
+requestHandlerPool = new KafkaRequestHandlerPool(config.brokerId,
+                                                 socketServer.requestChannel,
+                                                 apis, time, config.numIoThreads)
+多个handler 线程共享kakfaApis 对象和requestChannel 对象
+KafkaRequestHandlerPool{
+  new KafkaRequestHandler(id, brokerId, aggregateIdleMeter, threadPoolSize, requestChannel, apis, time)
+}
+KafkaRequestHandler{
+  run(){
+    while(true){
+      //从requestChannel中获取请求
+      var request = requeChannel.receiveRequest(300);
+      //如果是正常请求 交给api处理 即为啥 请求的发送对象是handler线程 而响应是来自于apis
+      apis.handle(request)
+    }
+  }
+}
+KafkaApis{
+  handle(request: RequestChannel.Request){
+    request.header.apiKey match {
+      case ApiKeys.PRODUCE => handleProduceRequest(request)
+      case ApiKeys.FETCH => handleFetchRequest(request)
+    }
+
+  }
+}
